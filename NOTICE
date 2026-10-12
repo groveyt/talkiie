@@ -1,0 +1,25 @@
+Talkiie
+Copyright 2026 yyt (the Talkiie developer)
+
+This product includes software and data developed by third parties. The full license texts, versions and
+the changes made are in AppPublic/THIRD_PARTY_NOTICES.md (the same file is bundled in the app as
+Talkiie.app/Contents/Resources/THIRD_PARTY_NOTICES.md and shown at https://talkiie.yyt.app/licenses.html).
+
+- whisper.cpp and ggml (MIT), https://github.com/ggml-org/whisper.cpp, v1.8.4, modified with two patches
+  (listed in AppPublic/THIRD_PARTY_NOTICES.md) and built as the static library in Vendor/whisper/. The patches
+  and the build script are not in this repository.
+- Breeze-ASR-25 by MediaTek Research (Apache License 2.0). The model is not in this repository; the app
+  downloads modified (quantized / Core ML) files made by the developer. These files are not provided or endorsed
+  by MediaTek Research.
+- OpenAI Whisper (MIT): the multilingual tokenizer vocabulary in Sources/NaturalInputCore/WhisperTokenizer/.
+- Sparkle 2.10.0 (MIT and the licenses of its bundled components), via Swift Package Manager.
+- OpenCC (Apache License 2.0): Taiwan variant dictionaries in Sources/NaturalInputCore/OpenCC/ (LICENSE there).
+- McBopomofo bopomofo data (MIT) and libtabe (BSD): Sources/NaturalInputCore/Bopomofo/ (LICENSE there).
+- Thinking Orbs (MIT): ported to Sources/TalkiieOrb/.
+
+AppPublic/THIRD_PARTY_NOTICES.md also lists reference lexicons used only on the developer's computer (the
+Ministry of Education's revised Mandarin dictionary, the jieba-zh_TW dictionary, government open data, the
+NAER terminology database). None of them, and no list derived from them, is in this repository or in the app.
+
+The Talkiie name, icon and wordmark are trademarks of the project and are not licensed by the Apache License
+2.0 (section 6); modified versions must not use them (see README.md, "Name and icon").

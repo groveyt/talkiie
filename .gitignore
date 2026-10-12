@@ -1,0 +1,6 @@
+Talkiie.xcodeproj/
+.build/
+build/
+build-public.log
+.swiftpm/
+.DS_Store

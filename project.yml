@@ -1,0 +1,112 @@
+name: Talkiie
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+configFiles:
+  Debug: AppPublic/VERSION
+  Release: AppPublic/VERSION
+settings:
+  base:
+    OTHER_SWIFT_FLAGS: "$(inherited) -file-prefix-map $(SRCROOT)=/Talkiie-src"
+  configs:
+    Release:
+      DEPLOYMENT_POSTPROCESSING: YES
+      STRIP_INSTALLED_PRODUCT: YES
+      STRIP_STYLE: debugging
+packages:
+  NaturalInputPackage:
+    path: .
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
+targets:
+  TalkiiePublic:
+    type: application
+    platform: macOS
+    configFiles:
+      Debug: AppPublic/VERSION
+      Release: AppPublic/VERSION
+    sources:
+      - path: App
+        excludes:
+          - FamilyEdition.swift
+          - Updater.swift
+          - DiagnosticsReport.swift
+          - CorrectionsSend.swift
+          - ReadScriptWindow.swift
+          - Info.plist
+          - Talkiie.entitlements
+      - path: AppPublic
+        excludes:
+          - THIRD_PARTY_NOTICES.md
+          - VERSION
+      - path: Assets/brand/menubar/carousel
+        type: folder
+        buildPhase: resources
+      - path: AppPublic/THIRD_PARTY_NOTICES.md
+        buildPhase: resources
+      - path: release/releases-public.json
+        buildPhase: resources
+    dependencies:
+      - package: NaturalInputPackage
+        product: NaturalInputCore
+      - package: NaturalInputPackage
+        product: NaturalInputEgress
+      - package: NaturalInputPackage
+        product: NaturalInputEgressPublic
+      - package: NaturalInputPackage
+        product: NaturalInputModelDownload
+      - package: NaturalInputPackage
+        product: NaturalInputLocalASR
+      - package: NaturalInputPackage
+        product: TalkiieLicensing
+      - package: Sparkle
+        product: Sparkle
+    settings:
+      base:
+        PRODUCT_NAME: TalkiiePublic
+        EXECUTABLE_NAME: Talkiie
+        PRODUCT_BUNDLE_IDENTIFIER: app.yyt.talkiie
+        ARCHS: arm64
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: AppPublic/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_DEBUG_DYLIB: NO
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        SWIFT_VERSION: "6.0"
+      configs:
+        Debug:
+          OTHER_CODE_SIGN_FLAGS: '--requirements "=designated => identifier \"app.yyt.talkiie\""'
+          ENABLE_HARDENED_RUNTIME: NO
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
+          CODE_SIGN_ENTITLEMENTS: AppPublic/TalkiiePublic.entitlements
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+          OTHER_CODE_SIGN_FLAGS: ""
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: ""
+
+aggregateTargets:
+  TalkiiePublicFinalize:
+    targets: [TalkiiePublic]
+    buildScripts:
+      - name: Sparkle framework (strip XPCServices, re-sign inside-out)
+        script: '"$SRCROOT/tools/sparkle-embed.sh" TalkiiePublic.app'
+        basedOnDependencyAnalysis: false
+    settings:
+      base:
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+schemes:
+  TalkiiePublic:
+    build:
+      targets:
+        TalkiiePublic: all
+        TalkiiePublicFinalize: all
+    run:
+      config: Debug
+      executable: TalkiiePublic
+    archive:
+      config: Release
