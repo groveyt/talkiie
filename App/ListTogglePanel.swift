@@ -2,6 +2,63 @@ import AppKit
 import NaturalInputCore
 import SwiftUI
 
+enum ReplaceOfferKind: Equatable {
+    case list(ListToggleKind)
+    case writtenStyle
+
+    var caption: String {
+        switch self {
+        case .list(let k): return k.caption
+        case .writtenStyle: return "刪好贅字了"
+        }
+    }
+
+    var buttonTitle: String {
+        switch self {
+        case .list(let k): return k.buttonTitle
+        case .writtenStyle: return "換成整理後的版本"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .list(.remove): return "把剛插的條列換成一般段落"
+        case .list(.apply): return "把剛插的這段換成條列"
+        case .writtenStyle: return "把剛插的這段換成刪掉贅字的版本"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .list(.remove): return "list.number"
+        case .list(.apply): return "text.alignleft"
+        case .writtenStyle: return "text.badge.checkmark"
+        }
+    }
+
+    var workingText: String {
+        switch self {
+        case .list(.remove): return "移除項目編號中…"
+        case .list(.apply): return "加入項目編號中…"
+        case .writtenStyle: return "換成整理後的版本中…"
+        }
+    }
+
+    var failureCaption: String {
+        switch self {
+        case .list: return "另一個版本在「最近口述」"
+        case .writtenStyle: return "整理後的版本在「最近口述」"
+        }
+    }
+
+    var copyTitle: String {
+        switch self {
+        case .list: return "複製另一個版本"
+        case .writtenStyle: return "複製整理後的版本"
+        }
+    }
+}
+
 @MainActor
 enum ListTogglePanel {
     enum Action: Equatable { case toggle, copyAlternate, close }
@@ -20,12 +77,13 @@ enum ListTogglePanel {
             return "這個 app 選不到剛插的字，沒有換"
         }
     }
-    static let failureCaption = "另一個版本在「最近口述」"
 
     private static let model = ListToggleModel()
     private static var panel: ListToggleNSPanel?
 
-    static func showOffer(_ kind: ListToggleKind) {
+    static func showOffer(_ kind: ListToggleKind) { showOffer(.list(kind)) }
+
+    static func showOffer(_ kind: ReplaceOfferKind) {
         model.kind = kind
         model.state = .offer
         present()
@@ -105,7 +163,7 @@ final class ListToggleNSPanel: NSPanel {
 @MainActor
 final class ListToggleModel: ObservableObject {
     enum State: Equatable { case offer, working, failed(ListToggleAbortReason) }
-    @Published var kind: ListToggleKind = .remove
+    @Published var kind: ReplaceOfferKind = .list(.remove)
     @Published var state: State = .offer
 }
 
@@ -117,23 +175,23 @@ struct ListToggleView: View {
         HStack(spacing: 8) {
             switch model.state {
             case .offer:
-                Image(systemName: model.kind == .remove ? "list.number" : "text.alignleft")
+                Image(systemName: model.kind.symbol)
                     .foregroundStyle(HUDStyle.secondaryText)
                 Text(model.kind.caption).font(.system(size: 13)).foregroundStyle(HUDStyle.text)
                 Button(model.kind.buttonTitle) { onAction(.toggle) }
                     .controlSize(.small)
-                    .help(model.kind == .remove ? "把剛插的條列換成一般段落" : "把剛插的這段換成條列")
+                    .help(model.kind.help)
             case .working:
                 ProgressView().controlSize(.small)
-                Text(model.kind == .remove ? "移除項目編號中…" : "加入項目編號中…")
+                Text(model.kind.workingText)
                     .font(.system(size: 13)).foregroundStyle(HUDStyle.text)
             case .failed(let reason):
                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(ListTogglePanel.failureMessage(reason)).font(.system(size: 13)).foregroundStyle(HUDStyle.text)
-                    Text(ListTogglePanel.failureCaption).font(.caption).foregroundStyle(HUDStyle.secondaryText)
+                    Text(model.kind.failureCaption).font(.caption).foregroundStyle(HUDStyle.secondaryText)
                 }
-                Button("複製另一個版本") { onAction(.copyAlternate) }
+                Button(model.kind.copyTitle) { onAction(.copyAlternate) }
                     .controlSize(.small)
                     .help("放進剪貼簿（剪貼簿管理器會看到這段文字）")
             }
@@ -162,22 +220,26 @@ final class ListToggleController {
     static let shared = ListToggleController()
 
     private struct Current {
-        let kind: ListToggleKind
+        let kind: ReplaceOfferKind
         let alternate: String
         let spot: InsertionSpot<FocusedElementIdentity>
+        let onReplaced: (() -> Void)?
     }
 
     private var current: Current?
+    private(set) var roundSerial = 0
     private var monitor: Task<Void, Never>?
     private var generation = 0
 
     static let pollSeconds: Double = 0.3
     static let initialSettleTries = 3
 
-    func offer(kind: ListToggleKind, alternate: String, spot: InsertionSpot<FocusedElementIdentity>?) {
+    func offer(_ kind: ReplaceOfferKind, alternate: String, spot: InsertionSpot<FocusedElementIdentity>?,
+               onShown: ((Bool) -> Void)? = nil, onReplaced: (() -> Void)? = nil) {
         dismiss(nil)
         guard let spot else {
-            Log.record(.listToggle(.notShown(kind, reason: nil)))
+            Self.record(kind, .notShown(reason: nil))
+            onShown?(false)
             return
         }
         generation += 1
@@ -186,23 +248,26 @@ final class ListToggleController {
             var reason = await TranscriptDelivery.listToggleStillAtEnd(spot)
             for _ in 0..<Self.initialSettleTries where reason == .cursorMoved {
                 try? await Task.sleep(for: .seconds(0.1))
-                guard gen == self.generation else { return }
+                guard gen == self.generation else { onShown?(false); return }
                 reason = await TranscriptDelivery.listToggleStillAtEnd(spot)
             }
             if let reason {
-                Log.record(.listToggle(.notShown(kind, reason: reason)))
+                Self.record(kind, .notShown(reason: reason))
+                onShown?(false)
                 return
             }
-            guard gen == self.generation, AppModel.shared.phase == .idle else { return }
-            self.current = Current(kind: kind, alternate: alternate, spot: spot)
+            guard gen == self.generation, AppModel.shared.phase == .idle else { onShown?(false); return }
+            self.current = Current(kind: kind, alternate: alternate, spot: spot, onReplaced: onReplaced)
             ListTogglePanel.onAction = { [weak self] in self?.handle($0) }
             ListTogglePanel.showOffer(kind)
-            Log.record(.listToggle(.shown(kind)))
+            Self.record(kind, .shown)
+            onShown?(true)
             self.watch(gen)
         }
     }
 
     func newRoundStarted() {
+        roundSerial += 1
         guard current != nil || ListTogglePanel.isShowing else { return }
         dismiss(.newRound)
     }
@@ -226,7 +291,7 @@ final class ListToggleController {
 
     private func dismiss(_ why: ListToggleLogEvent.Hidden?) {
         monitor?.cancel(); monitor = nil
-        if let why, let c = current { Log.record(.listToggle(.hidden(c.kind, why))) }
+        if let why, let c = current { Self.record(c.kind, .hidden(why)) }
         current = nil
         generation += 1
         ListTogglePanel.close()
@@ -239,7 +304,7 @@ final class ListToggleController {
         case .copyAlternate:
             if let c = current {
                 Clipboard.copy(c.alternate)
-                Log.record(.listToggle(.copied(c.kind)))
+                Self.record(c.kind, .copied)
             }
             dismiss(nil)
         case .toggle:
@@ -253,11 +318,12 @@ final class ListToggleController {
                 guard gen == self.generation else { return }
                 switch result {
                 case .replaced(let units):
-                    Log.record(.listToggle(.replaced(c.kind, units: units)))
+                    Self.record(c.kind, .replaced(units: units))
+                    c.onReplaced?()
                     self.current = nil
                     ListTogglePanel.close()
                 case .aborted(let reason, let collapsed, let typed):
-                    Log.record(.listToggle(.aborted(c.kind, reason, collapsed: collapsed, typedUnits: typed)))
+                    Self.record(c.kind, .aborted(reason, collapsed: collapsed, typedUnits: typed))
                     ListTogglePanel.showFailed(reason)
                     self.monitor = Task { [weak self] in
                         try? await Task.sleep(for: .seconds(ListToggle.visibleSeconds))
@@ -266,6 +332,15 @@ final class ListToggleController {
                     }
                 }
             }
+        }
+    }
+}
+
+extension ListToggleController {
+    static func record(_ kind: ReplaceOfferKind, _ event: ReplaceOfferEvent) {
+        switch kind {
+        case .list(let k): Log.record(.listToggle(event.listToggle(k)))
+        case .writtenStyle: Log.record(.writtenStyleSwap(event))
         }
     }
 }
@@ -287,6 +362,7 @@ enum ListToggleSelfTest {
         let shots: [(String, () -> Void)] = [
             ("list-toggle-remove.png", { ListTogglePanel.showOffer(.remove) }),
             ("list-toggle-apply.png", { ListTogglePanel.showOffer(.apply) }),
+            ("written-style-swap.png", { ListTogglePanel.showOffer(.writtenStyle) }),
             ("list-toggle-working.png", { ListTogglePanel.showWorking() }),
             ("list-toggle-failed.png", { ListTogglePanel.showFailed(.selectionMismatch) }),
         ]

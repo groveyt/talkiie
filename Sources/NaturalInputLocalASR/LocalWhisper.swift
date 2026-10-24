@@ -5,6 +5,7 @@ import whisper
 public actor LocalWhisper: Transcriber, SegmentTranscriber {
     public static let failureMessage = "本機轉錄失敗，這段口述沒有轉錄"
     public static let sampleRate = 16_000
+    public static let promptBeamSize: Int32 = 1
     public static let defaultIdleUnload: Duration = .seconds(180)
 
     public nonisolated let model: LocalWhisperModel
@@ -25,6 +26,9 @@ public actor LocalWhisper: Transcriber, SegmentTranscriber {
     public private(set) var lastRunUsedPrompt = false
 
     public var isLoaded: Bool { handle != nil }
+
+    var promptBeamSizeInUse: Int32 = LocalWhisper.promptBeamSize
+    func setPromptBeamSizeForBench(_ n: Int32) { promptBeamSizeInUse = n }
 
     public init(model: LocalWhisperModel, threads: Int32 = 4,
                 idleUnloadAfter: Duration? = LocalWhisper.defaultIdleUnload) {
@@ -160,7 +164,7 @@ public actor LocalWhisper: Transcriber, SegmentTranscriber {
         defer { free(language) }
         let promptText = prompt.isEmpty ? nil : strdup(prompt.text)
         defer { free(promptText) }
-        let params = Self.fullParams(threads: threads, language: language,
+        let params = Self.fullParams(threads: threads, language: language, promptBeamSize: promptBeamSizeInUse,
                                      prompt: promptText, maxContext: Int32(prompt.maxContext))
 
         lastRunUsedPrompt = params.initial_prompt != nil
@@ -171,18 +175,24 @@ public actor LocalWhisper: Transcriber, SegmentTranscriber {
         guard rc == 0 else { return (.failed(Self.failureMessage), nil) }
 
         let parseStarted = clock.now
-        let filtered = HallucinationFilter.filter(Self.candidates(handle), chunk: chunk)
-        let timing = RequestTiming(prepMillis: RequestTiming.millis(inferenceStarted - started),
+        let candidates = Self.candidates(handle)
+        let filtered = HallucinationFilter.filter(candidates, chunk: chunk)
+        var timing = RequestTiming(prepMillis: RequestTiming.millis(inferenceStarted - started),
                                    networkMillis: RequestTiming.millis(parseStarted - inferenceStarted),
                                    parseMillis: RequestTiming.millis(clock.now - parseStarted),
                                    hallucinationDrops: filtered.drops)
+        #if DEBUG
+        timing.segmentConfidences = SegmentConfidence.make(candidates: candidates, chunk: chunk, padding: padding)
+        #endif
         return (.segments(padding.unshifted(filtered.segments)), timing)
     }
 
     static func fullParams(threads: Int32, language: UnsafePointer<CChar>?,
+                           promptBeamSize: Int32 = LocalWhisper.promptBeamSize,
                            prompt: UnsafePointer<CChar>? = nil, maxContext: Int32 = 0) -> whisper_full_params {
-        var p = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
-        p.strategy = WHISPER_SAMPLING_GREEDY
+        let useBeam = prompt != nil && promptBeamSize > 1
+        var p = whisper_full_default_params(useBeam ? WHISPER_SAMPLING_BEAM_SEARCH : WHISPER_SAMPLING_GREEDY)
+        p.strategy = useBeam ? WHISPER_SAMPLING_BEAM_SEARCH : WHISPER_SAMPLING_GREEDY
         p.n_threads = threads
         p.n_max_text_ctx = prompt == nil ? 0 : maxContext
         p.offset_ms = 0
@@ -214,8 +224,8 @@ public actor LocalWhisper: Transcriber, SegmentTranscriber {
         p.entropy_thold = 2.4
         p.logprob_thold = -1
         p.no_speech_thold = 0.6
-        p.greedy.best_of = 2
-        p.beam_search.beam_size = -1
+        p.greedy.best_of = useBeam ? promptBeamSize : 2
+        p.beam_search.beam_size = useBeam ? promptBeamSize : -1
         p.vad = false
         p.new_segment_callback = nil
         p.progress_callback = nil
@@ -243,11 +253,15 @@ public actor LocalWhisper: Transcriber, SegmentTranscriber {
             }
             let avg = nTokens > 0 ? Double(logprob) / Double(nTokens) : Double.nan
             let noSpeech = Double(whisper_full_get_segment_no_speech_prob_from_state(h.state, i))
-            out.append(HallucinationFilter.Candidate(
+            var cand = HallucinationFilter.Candidate(
                 segment: TranscriptSegment(text: text, start: t0, end: t1),
                 noSpeechProb: noSpeech.isFinite ? noSpeech : nil,
                 avgLogprob: avg.isFinite ? avg : nil,
-                compressionRatio: nil))
+                compressionRatio: nil)
+            #if DEBUG
+            cand.tokenCount = Int(max(nTokens, 0))
+            #endif
+            out.append(cand)
         }
         return out
     }

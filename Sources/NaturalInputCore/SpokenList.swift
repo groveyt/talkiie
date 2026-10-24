@@ -589,6 +589,7 @@ public enum SpokenList {
     private static let keptMeasures: Set<Character> = [
         "張", "张", "份", "本", "封", "篇", "幅", "則", "则", "塊", "块", "片", "款", "種", "种", "類", "类",
         "組", "组", "台", "臺", "支", "部", "首", "道", "間", "间", "家", "顆", "颗",
+        "件",
     ]
     private static let markerPunct: Set<Character> = ["，", "、", "：", ",", ":"]
     private static let clauseBreaks: Set<Character> = ["，", "。", "；", "：", "！", "？", "、", " ", "\u{3000}",

@@ -6,6 +6,9 @@ public enum HallucinationFilter {
         public var noSpeechProb: Double?
         public var avgLogprob: Double?
         public var compressionRatio: Double?
+        #if DEBUG
+        public var tokenCount: Int?
+        #endif
 
         public init(segment: TranscriptSegment, noSpeechProb: Double? = nil,
                     avgLogprob: Double? = nil, compressionRatio: Double? = nil) {

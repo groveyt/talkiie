@@ -173,6 +173,14 @@ struct WhatsNewView: View {
             }
             Divider()
             HStack {
+                Text("這一版好用嗎？想到什麼都可以跟我說")
+                    .font(.callout)
+                Spacer()
+                Button("回報問題…") { Edition.reportProblem() }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            HStack {
                 Text("之後想再看：選單列的 Talkiie →「設定…」→「關於」→「這一版的新功能…」")
                     .font(.callout)
                     .foregroundStyle(.secondary)

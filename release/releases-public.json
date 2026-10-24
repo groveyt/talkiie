@@ -2,6 +2,76 @@
   "$comment": "Talkiie 公開版（app.yyt.talkiie）更新說明的唯一來源。開發版的是 release/releases.json（版號各自獨立，decisions/0018 檔尾）。讀它的有三個：Sparkle 的「有新版本」視窗（tools/release/make-appcast-public.sh 用 tools/release/releases.py --product public plain 轉成純文字、以 sparkle:format=\"plain-text\" 內嵌進 appcast —— 不開 WebView）、app 的「新功能」視窗（打包進 Talkiie.app/Contents/Resources/releases-public.json）與官網的版本紀錄（site/changelog.html 標記之間，由 tools/release/releases.py --product public site-html 產生；改了這份就重產，site/stage.sh 與 tools/release-public.sh 會擋沒重產的）。新的在前；最上面那一版必須等於 AppPublic/VERSION 的 MARKETING_VERSION（tools/release/releases.py --product public check，tools/release-public.sh 發版前一定跑）。只寫純文字，給一般使用者看的白話；不准提開發版的部署細節與開發者個人資訊（releases.py 會擋）。kind：new／improved／fixed；how 是可選的步驟；summary 是可選的一句話（排在各項之前）。數字與單位、「設定 › 一般」這類不該拆開的地方用不斷行空白 \\u00a0（官網的排版規則，見 site/README.md）。",
   "releases": [
     {
+      "version": "1.3.4",
+      "date": "2026-10-24",
+      "summary": "有想法或遇到問題，隨時可以從選單「回報問題…」跟開發者說；清單不再少字，長一點的口述辨識更準。",
+      "items": [
+        {
+          "kind": "new",
+          "title": "有想法或遇到問題，可以直接跟開發者說",
+          "body": "更新後的「新功能」視窗最下面多了一列「這一版好用嗎？」和「回報問題…」按鈕。用了一陣子之後，選單最上面會出現一次「💬 用得還順嗎？跟開發者說一聲」，點了會在瀏覽器開回報網頁；按「不用了」就不會再出現。",
+          "how": [
+            "隨時都可以：點 Talkiie 圖示，選「回報問題…」。"
+          ]
+        },
+        {
+          "kind": "fixed",
+          "title": "說「第一件、第二件」排成清單時不會少字",
+          "body": "以前講「第一件…第二件…」排成清單時，會變成「1. 件…」把字吃掉。現在會完整保留。"
+        },
+        {
+          "kind": "improved",
+          "title": "長一點的口述辨識更準",
+          "body": "15 秒以上的口述會切成更長的段落去辨識，整句更準。代價是 15 到 28 秒的口述，講完後出字大約多等 0.4 秒。"
+        }
+      ]
+    },
+    {
+      "version": "1.3.3",
+      "date": "2026-10-18",
+      "summary": "長句子在 Claude、Slack 等 app 裡更能整句打完，清單插完後可以一鍵切換項目編號，聽寫更準。",
+      "items": [
+        {
+          "kind": "new",
+          "title": "插完清單後可以切換項目編號",
+          "body": "說了一段像清單的話，插完之後膠囊旁邊會出現「移除項目編號」或「加入項目編號」，按了才換，不按就維持原樣；打字、移動游標或過幾秒就會自動收起。預設開著。",
+          "how": [
+            "不想看到：點 Talkiie 圖示，選「設定…」，到「文字」頁，關掉「插完後讓我切換項目編號」。"
+          ]
+        },
+        {
+          "kind": "improved",
+          "title": "口述的清單更容易被認出來",
+          "body": "講「第一、第二」「一、二、三」這類清單時，更常自動排成 1. 2. 3.，最後一項也不會被句號切掉。"
+        },
+        {
+          "kind": "improved",
+          "title": "百分比和 vs 寫得更自然",
+          "body": "說「30 percent」會寫成「30%」；中文句子裡的 versus 會寫成 vs。"
+        },
+        {
+          "kind": "improved",
+          "title": "個人詞庫更常派上用場",
+          "body": "你自己加的詞會優先給語音模型參考，詞庫很多時也不會被擠掉；從你的修改學到的詞，套用時更小心，不會把原本對的字改壞。"
+        },
+        {
+          "kind": "improved",
+          "title": "轉文字更穩、更快",
+          "body": "一段聲音轉文字偶爾一下子就失敗時，會自動再試一次；隔一段時間沒用，再開口時也不用等那麼久。"
+        },
+        {
+          "kind": "fixed",
+          "title": "長句子不會只打進前面一段",
+          "body": "以前在 Claude 桌面版、Slack 等 app 裡，長句子有時只插進前面一段就顯示失敗。現在會等 app 跟上，整句插完。"
+        },
+        {
+          "kind": "fixed",
+          "title": "網頁空輸入框的字不會再打到一半停下",
+          "body": "以前在 Gemini 這類網頁的空輸入框裡，第一次插字有時打到一半就停下來。現在空的輸入框也能整句插完。"
+        }
+      ]
+    },
+    {
       "version": "1.3.0",
       "date": "2026-10-07",
       "summary": "第一次使用有導覽，統計頁改版，可以說「換行」，英文聽寫更準，在 Slack 這類 app 裡打字更穩。",

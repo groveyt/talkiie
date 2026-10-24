@@ -97,8 +97,9 @@ enum LogEvent {
     case editCapture(EditCaptureLogResult)
     case editCorrectionsPruned(files: Int)
     case editCorrectionsDeleted
-    case writtenStyle(mode: WrittenStyleMode, applied: Bool, fallback: RewriteFallback?, rejection: RewriteRejection?,
-                      millis: Int?, changedPercent: Int?)
+    case writtenStyle(mode: WrittenStyleMode, passed: Bool, offered: Bool, fallback: RewriteFallback?,
+                      rejection: RewriteRejection?, millis: Int?, changedPercent: Int?)
+    case writtenStyleSwap(ReplaceOfferEvent)
     case originalReinserted(mode: WrittenStyleMode?, recorded: Bool, offeredWords: Int)
     case keepWordsMarked(added: Int, total: Int)
     case listToggle(ListToggleLogEvent)
@@ -139,6 +140,26 @@ enum ListToggleLogEvent {
     case replaced(ListToggleKind, units: Int)
     case aborted(ListToggleKind, ListToggleAbortReason, collapsed: Bool, typedUnits: Int)
     case copied(ListToggleKind)
+}
+
+enum ReplaceOfferEvent {
+    case shown
+    case notShown(reason: ListToggleAbortReason?)
+    case hidden(ListToggleLogEvent.Hidden)
+    case replaced(units: Int)
+    case aborted(ListToggleAbortReason, collapsed: Bool, typedUnits: Int)
+    case copied
+
+    func listToggle(_ kind: ListToggleKind) -> ListToggleLogEvent {
+        switch self {
+        case .shown: return .shown(kind)
+        case .notShown(let reason): return .notShown(kind, reason: reason)
+        case .hidden(let why): return .hidden(kind, why)
+        case .replaced(let units): return .replaced(kind, units: units)
+        case .aborted(let reason, let collapsed, let typed): return .aborted(kind, reason, collapsed: collapsed, typedUnits: typed)
+        case .copied: return .copied(kind)
+        }
+    }
 }
 
 enum OnboardingLogEvent: Sendable {
@@ -381,9 +402,9 @@ enum Log {
             insert.notice("edit corrections pruned files=\(files, privacy: .public)")
         case .editCorrectionsDeleted:
             insert.notice("edit corrections deleted by user")
-        case .writtenStyle(let mode, let applied, let fallback, let rejection, let ms, let changed):
+        case .writtenStyle(let mode, let passed, let offered, let fallback, let rejection, let ms, let changed):
             func v(_ n: Int?) -> String { n.map(String.init) ?? "-" }
-            transcribe.notice("written style mode=\(mode.rawValue, privacy: .public) applied=\(applied, privacy: .public) fallback=\(fallback?.rawValue ?? "-", privacy: .public) rejection=\(rejection?.rawValue ?? "-", privacy: .public) latency=\(v(ms), privacy: .public)ms changed=\(v(changed), privacy: .public)%")
+            transcribe.notice("written style mode=\(mode.rawValue, privacy: .public) passed=\(passed, privacy: .public) offered=\(offered, privacy: .public) fallback=\(fallback?.rawValue ?? "-", privacy: .public) rejection=\(rejection?.rawValue ?? "-", privacy: .public) latency=\(v(ms), privacy: .public)ms changed=\(v(changed), privacy: .public)%")
         case .originalReinserted(let mode, let recorded, let offered):
             insert.notice("original reinserted mode=\(mode?.rawValue ?? "-", privacy: .public) recorded=\(recorded, privacy: .public) offeredWords=\(offered, privacy: .public)")
         case .whisperWarmUp(let idle, let ms, let ok):
@@ -402,6 +423,21 @@ enum Log {
                 insert.notice("list toggle result=aborted kind=\(kind.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) collapsed=\(collapsed, privacy: .public) typedUnits=\(typed, privacy: .public)")
             case .copied(let kind):
                 insert.notice("list toggle copied kind=\(kind.rawValue, privacy: .public)")
+            }
+        case .writtenStyleSwap(let event):
+            switch event {
+            case .shown:
+                insert.notice("written style swap shown")
+            case .notShown(let reason):
+                insert.notice("written style swap notShown reason=\(reason?.rawValue ?? "noSpot", privacy: .public)")
+            case .hidden(let why):
+                insert.notice("written style swap hidden reason=\(why.rawValue, privacy: .public)")
+            case .replaced(let units):
+                insert.notice("written style swap result=replaced units=\(units, privacy: .public)")
+            case .aborted(let reason, let collapsed, let typed):
+                insert.notice("written style swap result=aborted reason=\(reason.rawValue, privacy: .public) collapsed=\(collapsed, privacy: .public) typedUnits=\(typed, privacy: .public)")
+            case .copied:
+                insert.notice("written style swap copied")
             }
         case .keepWordsMarked(let added, let total):
             insert.notice("keep words marked added=\(added, privacy: .public) total=\(total, privacy: .public)")
@@ -539,7 +575,7 @@ enum ListToggleSelfTestLine {
         switch line {
         case .passed(let heights):
             let h = heights.map(String.init).joined(separator: "/")
-            print("list-toggle-selftest: PASS（切換項目編號面板：移除／改成／處理中／放棄 四種狀態 \(h) 高、不搶焦點、收得起來）")
+            print("list-toggle-selftest: PASS（替換面板：移除／改成／換成整理後的版本／處理中／放棄 五種狀態 \(h) 高、不搶焦點、收得起來）")
         case .failed(let check):
             print("list-toggle-selftest: FAIL 檢查 \(check)（見 App/ListTogglePanel.swift 的 ListToggleSelfTest）")
         }
@@ -617,6 +653,7 @@ enum SelfTestEnvironmentLine {
         case settings = "settings-selftest"
         case onboarding = "onboarding-selftest"
         case fallback = "fallback-selftest"
+        case hud = "hud-selftest"
     }
 
     static func emit(test: Test, blocker: SelfTestEnvironment.Blocker, during: Bool) {
@@ -628,6 +665,21 @@ enum SelfTestEnvironmentLine {
         }
         print("\(test.rawValue): ENVIRONMENT \(why)\(during ? "（斷言失敗時才發現：跑到一半被鎖）" : "")"
               + "——exit \(SelfTestEnvironment.exitCode)：這台機器現在跑不了，**不是通過**；解鎖（螢幕共享）或在有 GUI 的 session 重跑")
+        fflush(stdout)
+    }
+}
+
+enum WhatsNewSnapshotsLine {
+    case usage
+    case saved(count: Int)
+
+    static func emit(_ line: WhatsNewSnapshotsLine) {
+        switch line {
+        case .usage:
+            print("whats-new-selftest: 用法 Talkiie --whats-new-selftest <資料夾>")
+        case .saved(let count):
+            print("whats-new-selftest: 存了 \(count) 張")
+        }
         fflush(stdout)
     }
 }

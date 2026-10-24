@@ -5,12 +5,16 @@ public enum NudgeFeature: Int, CaseIterable, Sendable {
     case dictionary = 2
     case fillerRemoval = 3
     case usageStats = 4
+    case feedback = 5
+
+    public var opensFeedback: Bool { self == .feedback }
 
     public var target: FeatureTarget {
         switch self {
         case .editCapture: return .privacy
         case .dictionary, .fillerRemoval: return .text
         case .usageStats: return .stats
+        case .feedback: return .about
         }
     }
 }
@@ -96,6 +100,13 @@ public enum FeatureNudgePlan {
     public static let startGraceDays = 3
     public static let globalIntervalDays = 7
     public static let maxShownPerFeature = 2
+    public static let maxShownFeedback = 1
+    public static let feedbackActiveDays = 7
+    public static let feedbackInsertions = 50
+
+    public static func maxShown(for feature: NudgeFeature) -> Int {
+        feature == .feedback ? maxShownFeedback : maxShownPerFeature
+    }
     public static let featureGapDays = 21
     public static let pendingExpiryDays = 7
 
@@ -112,6 +123,8 @@ public enum FeatureNudgePlan {
             return c.fillerRemovalOff && c.meets(days: startActiveDays, insertions: 20)
         case .usageStats:
             return !c.statsPaneVisited && c.statsRecording && c.usage.weekCharacters > 0 && c.meets(days: 7, insertions: 0)
+        case .feedback:
+            return c.meets(days: feedbackActiveDays, insertions: feedbackInsertions)
         }
     }
 
@@ -127,7 +140,7 @@ public enum FeatureNudgePlan {
         if let last = state.lastShownAt, c.now.timeIntervalSince(last) < Double(globalIntervalDays) * day { return nil }
         for f in NudgeFeature.allCases {
             let r = state.record(for: f.rawValue)
-            guard !r.dismissed, !r.opened, r.shownCount < maxShownPerFeature else { continue }
+            guard !r.dismissed, !r.opened, r.shownCount < maxShown(for: f) else { continue }
             if let last = r.lastShownAt, c.now.timeIntervalSince(last) < Double(featureGapDays) * day { continue }
             if isEligible(f, c) { return f }
         }
@@ -174,9 +187,19 @@ public enum FeatureNudgePlan {
             return "個人詞庫：常被聽錯的人名、產品名加進來"
         case .fillerRemoval:
             return "刪除贅字：自動拿掉「嗯、那個、就是」"
+        case .feedback:
+            return "用得還順嗎？跟開發者說一聲"
         case .usageStats:
             return "這週用說的打了 \(c.usage.weekCharacters.formatted()) 字，約省下 \(c.usage.weekSavedMinutes) 分鐘 ›"
         }
+    }
+
+    public static func menuLine(for feature: NudgeFeature, context c: NudgeContext) -> String {
+        menuPrefix(for: feature) + text(for: feature, context: c)
+    }
+
+    public static func menuPrefix(for feature: NudgeFeature) -> String {
+        feature.opensFeedback ? "💬 " : "💡 試試："
     }
 
     public static func daysSince(_ completedAt: Date?, now: Date) -> Int? {

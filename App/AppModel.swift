@@ -528,7 +528,9 @@ final class AppModel: ObservableObject {
             #if DEBUG && RESEARCH_CAPTURE
             if let outcome {
                 ResearchCapture.shared.roundTranscribed(researchRound, outcome, timeline: finishedTimeline,
-                                                        texts: round.debugTexts)
+                                                        texts: round.debugTexts, provenance: round.debugProvenance,
+                                                        confidence: round.debugConfidence,
+                                                        speaker: Self.speaker, transcriptionPath: Self.transcriptionPath)
             }
             #endif
             _ = finishedTimeline
@@ -554,15 +556,12 @@ final class AppModel: ObservableObject {
                     return
                 }
                 let budget = Self.sendTimeoutSeconds - Date().timeIntervalSince(since)
-                let result = await WrittenStyleRound.run(converted, mode: mode, keepWords: WrittenStyleKeepWordsStore.current,
-                                                         rewriter: self.rewriter, budget: budget)
-                let r = result.report
-                Log.record(.writtenStyle(mode: r.mode, applied: r.applied, fallback: r.fallback, rejection: r.rejection,
-                                         millis: r.millis, changedPercent: r.changedPercent))
-                timeline?.rewritten(r)
-                guard self.phase == .sending(since: since) else { return }
-                self.transcriptionFinished(result.text, original: result.original, rewriteMode: mode,
-                                           listOffer: result.original == nil ? listOffer : nil,
+                let keepWords = WrittenStyleKeepWordsStore.current
+                let rewriter = self.rewriter
+                let task = Task.detached(priority: .userInitiated) {
+                    await WrittenStyleRound.run(converted, mode: mode, keepWords: keepWords, rewriter: rewriter, budget: budget)
+                }
+                self.transcriptionFinished(converted, listOffer: listOffer, rewrite: PendingRewrite(mode: mode, task: task),
                                            target: target, timeline: timeline)
             case .failed(let message):
                 Log.record(.transcriptionFailed(unimplemented: message == UnimplementedTranscriber.message))
@@ -641,13 +640,16 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func transcriptionFinished(_ text: String, original: String? = nil, rewriteMode: WrittenStyleMode? = nil,
-                               listOffer: ListToggleOffer? = nil,
+    func transcriptionFinished(_ text: String, listOffer: ListToggleOffer? = nil, rewrite: PendingRewrite? = nil,
                                target: FrozenTarget?, timeline: RoundTimeline? = nil) {
         finishRound(with: text) {
-            await self.deliverNewTranscript(text, original: original, rewriteMode: rewriteMode, listOffer: listOffer,
-                                            to: target, timeline: timeline)
+            await self.deliverNewTranscript(text, listOffer: listOffer, rewrite: rewrite, to: target, timeline: timeline)
         }
+    }
+
+    struct PendingRewrite {
+        let mode: WrittenStyleMode
+        let task: Task<WrittenStyleResult, Never>
     }
 
     private func finishRound(with text: String, deliver: @escaping @MainActor () async -> Void) {
@@ -673,16 +675,31 @@ final class AppModel: ObservableObject {
     }
 
     @discardableResult
-    func deliverNewTranscript(_ text: String, original: String? = nil, rewriteMode: WrittenStyleMode? = nil,
-                              listOffer: ListToggleOffer? = nil,
+    func deliverNewTranscript(_ text: String, listOffer: ListToggleOffer? = nil, rewrite: PendingRewrite? = nil,
                               to target: FrozenTarget?,
                               timeline: RoundTimeline? = nil) async -> TranscriptDelivery.Outcome {
-        history.record(text, original: original, rewriteMode: rewriteMode,
-                       listAlternate: listOffer?.alternate, listKind: listOffer?.kind)
+        let serial = history.record(text, listAlternate: listOffer?.alternate, listKind: listOffer?.kind)
         let marks = timeline.map { _ in TranscriptDelivery.Marks() }
-        let outcome = await deliver(text, to: target, marks: marks, listOffer: listOffer)
+        let round = ListToggleController.shared.roundSerial
+        let spot = (listOffer != nil || rewrite != nil) ? TranscriptDelivery.SpotBox() : nil
+        let outcome = await deliver(text, to: target, marks: marks, spot: spot)
         if let marks { timeline?.delivered(marks) }
-        let stages = timeline?.finish()
+        let insertedFully: Bool = { if case .inserted = outcome { return true } else { return false } }()
+        let stages: LatencyStages?
+        if let rewrite {
+            stages = timeline?.snapshot()
+            Task {
+                let result = await rewrite.task.value
+                timeline?.rewritten(result.report)
+                timeline?.finish()
+                self.afterInsertion(text, serial: serial, round: round, insertedFully: insertedFully, spot: spot?.spot,
+                                    listOffer: listOffer, rewrite: (rewrite.mode, result))
+            }
+        } else {
+            stages = timeline?.finish()
+            afterInsertion(text, serial: serial, round: round, insertedFully: insertedFully, spot: spot?.spot,
+                           listOffer: listOffer, rewrite: nil)
+        }
         if timeline != nil {
             let inserted: Bool = { if case .inserted = outcome { return true } else { return false } }()
             UsageStatsRecorder.record(UsageRound(result: inserted ? .inserted : .notInserted,
@@ -697,12 +714,42 @@ final class AppModel: ObservableObject {
         return outcome
     }
 
+    private func afterInsertion(_ inserted: String, serial: Int?, round: Int, insertedFully: Bool,
+                                spot: InsertionSpot<FocusedElementIdentity>?, listOffer: ListToggleOffer?,
+                                rewrite: (mode: WrittenStyleMode, result: WrittenStyleResult)?) {
+        let alternate = rewrite.flatMap { WrittenStyleSwap.alternate($0.result, inserted: inserted) }
+        if let alternate, let serial, let mode = rewrite?.mode { history.attachRewritten(alternate, mode: mode, to: serial) }
+        let choice = WrittenStyleSwap.choose(insertedFully: insertedFully,
+                                             newRoundStarted: ListToggleController.shared.roundSerial != round,
+                                             idle: phase == .idle, rewrite: alternate, list: listOffer)
+        func logWrittenStyle(offered: Bool) {
+            guard let r = rewrite?.result.report else { return }
+            Log.record(.writtenStyle(mode: r.mode, passed: alternate != nil, offered: offered, fallback: r.fallback,
+                                     rejection: r.rejection, millis: r.millis, changedPercent: r.changedPercent))
+        }
+        switch choice {
+        case .writtenStyle(let rewritten)?:
+            if let listOffer { Log.record(.listToggle(.notShown(listOffer.kind, reason: nil))) }
+            ListToggleController.shared.offer(.writtenStyle, alternate: rewritten, spot: spot,
+                                              onShown: { logWrittenStyle(offered: $0) },
+                                              onReplaced: { [weak self] in
+                                                  guard let self, let serial else { return }
+                                                  self.history.applyRewritten(to: serial)
+                                              })
+        case .list(let offer)?:
+            logWrittenStyle(offered: false)
+            ListToggleController.shared.offer(.list(offer.kind), alternate: offer.alternate, spot: spot)
+        case nil:
+            logWrittenStyle(offered: false)
+            if let listOffer { Log.record(.listToggle(.notShown(listOffer.kind, reason: nil))) }
+        }
+    }
+
     private func deliver(_ text: String, to target: FrozenTarget?,
                          marks: TranscriptDelivery.Marks? = nil,
                          announceSuccess: Bool = true,
-                         listOffer: ListToggleOffer? = nil) async -> TranscriptDelivery.Outcome {
+                         spot: TranscriptDelivery.SpotBox? = nil) async -> TranscriptDelivery.Outcome {
         let outcome: TranscriptDelivery.Outcome
-        let spot = listOffer.map { _ in TranscriptDelivery.SpotBox() }
         if inserting {
             outcome = .busy
         } else {
@@ -715,13 +762,6 @@ final class AppModel: ObservableObject {
         Log.record(.insertion(outcome))
         if case .refused(.accessibilityNotTrusted) = outcome { refreshPermissions() }
         if announceSuccess || !DeliveryContent(outcome).succeeded { presentDelivery(outcome, text: text) }
-        if let listOffer {
-            if case .inserted = outcome, phase == .idle {
-                ListToggleController.shared.offer(kind: listOffer.kind, alternate: listOffer.alternate, spot: spot?.spot)
-            } else {
-                Log.record(.listToggle(.notShown(listOffer.kind, reason: nil)))
-            }
-        }
         return outcome
     }
 
@@ -876,6 +916,8 @@ final class RoundTimeline {
     func punctuated(_ report: PunctuationReport) { value.record(report) }
 
     func rewritten(_ report: RewriteReport) { value.record(report) }
+
+    func snapshot() -> LatencyStages { finished ?? value.stages() }
 
     func handedOff(_ summary: StreamingTranscription.StopSummary) {
         value.mark(.tailHandedOff)

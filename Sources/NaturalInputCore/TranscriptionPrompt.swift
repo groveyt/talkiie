@@ -41,6 +41,10 @@ public struct TranscriptionPrompt: Equatable, Sendable {
         public var dropped = 0
         public var gated = 0
         public var tokens = 0
+        public init(manual: Int = 0, learned: Int = 0, dropped: Int = 0, gated: Int = 0, tokens: Int = 0) {
+            self.manual = manual; self.learned = learned; self.dropped = dropped
+            self.gated = gated; self.tokens = tokens
+        }
     }
     public let counts: Counts
 

@@ -224,7 +224,7 @@ struct OnboardingFeaturesStep: View {
 
         if Edition.offersWrittenStyle {
             OnboardingCard(symbol: "text.badge.checkmark", title: "整理成書面語",
-                           summary: "講完之後自動刪掉口語的贅字再打出來。預設關閉，由你自己打開。") {
+                           summary: "講完之後先照原樣打出來，刪好贅字後讓你按一下換成整理後的版本。預設關閉，由你自己打開。") {
                 WrittenStyleToggleRow()
             }
         }

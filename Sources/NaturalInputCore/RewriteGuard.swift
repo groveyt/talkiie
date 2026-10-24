@@ -103,6 +103,7 @@ public enum RewriteGuard {
         if removed * 100 > total * maxDeletionPercent { return .rejected(.tooMuchDeleted) }
 
         if let r = structureLoss(o, keep: keep) ?? structureLoss(o, keep: keepRight) { return .rejected(r) }
+        if mergesClauses(o, keep: keep) || mergesClauses(o, keep: keepRight) { return .rejected(.clauseMerged) }
 
         let result = tidy(restoringSeparators(o, keep: keep))
         if let loss = protectedLoss(original: compact(original), result: compact(String(result)), keepWords: keepWords) {
@@ -133,12 +134,40 @@ public enum RewriteGuard {
             let prev = o[..<i].lastIndex { !$0.isWhitespace && $0 != "\n" }
             let lineBreakBefore = o[(prev.map { $0 + 1 } ?? 0)..<i].contains("\n")
             let interior = prev != nil && !lineBreakBefore && j < o.count && o[j] != "\n" && keep[j]
-            if interior, let b = best, content != 1, let p = prev, isContent(o[p]), isContent(o[j]) {
+            if interior, let b = best, let p = prev, isContent(o[p]), isContent(o[j]),
+               content != 1 || joinsASCIIAndCJK(o[p], o[j]) {
                 keep[b] = true
             }
             i = max(j, i + 1)
         }
         return o.indices.filter { keep[$0] }.map { o[$0] }
+    }
+
+    static func joinsASCIIAndCJK(_ a: Character, _ b: Character) -> Bool {
+        func ascii(_ c: Character) -> Bool { c.isASCII && (c.isLetter || c.isNumber) }
+        func cjk(_ c: Character) -> Bool { !c.isASCII && isContent(c) }
+        return (ascii(a) && cjk(b)) || (cjk(a) && ascii(b))
+    }
+
+    static let fillerChars: Set<Character> = Set("啦吧啊呀嘛喔哦囉呃嗯欸耶喇那個這就是然後其實所以反正對好")
+
+    static func mergesClauses(_ o: [Character], keep: [Bool]) -> Bool {
+        func deletedSpan(from start: Int, step: Int) -> [Character]? {
+            var i = start
+            while o.indices.contains(i), o[i].isWhitespace { i += step }
+            guard o.indices.contains(i), !keep[i], isContent(o[i]) else { return nil }
+            var span: [Character] = []
+            while o.indices.contains(i), o[i] != "\n", !clauseEnders.contains(o[i]), !(keep[i] && isContent(o[i])) {
+                if !keep[i], isContent(o[i]) { span.append(o[i]) }
+                i += step
+            }
+            return o.indices.contains(i) && keep[i] && isContent(o[i]) ? span : nil
+        }
+        for e in o.indices where keep[e] && clauseEnders.contains(o[e]) && o[e] != "\n" {
+            guard let left = deletedSpan(from: e - 1, step: -1), let right = deletedSpan(from: e + 1, step: 1) else { continue }
+            if !left.allSatisfy(fillerChars.contains) || !right.allSatisfy(fillerChars.contains) { return true }
+        }
+        return false
     }
 
     static func embed(_ o: [Character], _ s: [Character], fromRight: Bool) -> [Bool]? {

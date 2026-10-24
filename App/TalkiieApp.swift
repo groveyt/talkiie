@@ -107,7 +107,7 @@ struct RecentDictationMenu: View {
                 Text("還沒有口述").foregroundStyle(.secondary)
             } else {
                 ForEach(Array(model.recentDictations.enumerated()), id: \.offset) { _, entry in
-                    Menu((entry.original == nil ? "" : "✎ ") + Self.label(entry.text)) {
+                    Menu((entry.original == nil && entry.rewritten == nil ? "" : "✎ ") + Self.label(entry.text)) {
                         Button("重新插入到目前游標處") { model.reinsert(entry.text) }
                         Button("複製（會放進剪貼簿）") { model.copyToClipboard(entry.text) }
                         if let alternate = entry.listAlternate {
@@ -117,9 +117,15 @@ struct RecentDictationMenu: View {
                             Button("插入另一個版本到目前游標處") { model.reinsert(alternate) }
                             Button("複製另一個版本（會放進剪貼簿）") { model.copyToClipboard(alternate) }
                         }
+                        if let rewritten = entry.rewritten {
+                            Divider()
+                            Text("整理後的版本：" + Self.label(rewritten)).foregroundStyle(.secondary)
+                            Button("插入整理後的版本到目前游標處") { model.reinsert(rewritten) }
+                            Button("複製整理後的版本（會放進剪貼簿）") { model.copyToClipboard(rewritten) }
+                        }
                         if let original = entry.original {
                             Divider()
-                            Text("已整理成書面語：" + Self.label(original)).foregroundStyle(.secondary)
+                            Text("已換成整理後的版本，原文：" + Self.label(original)).foregroundStyle(.secondary)
                             Button("插入原文到目前游標處") { model.insertOriginal(entry) }
                             Button("複製原文（會放進剪貼簿）") { model.copyToClipboard(original) }
                         }
@@ -211,6 +217,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in await FallbackSelfTest.run() }
         } else if CommandLine.arguments.contains("--list-toggle-selftest") {
             Task { @MainActor in await ListToggleSelfTest.run() }
+        } else if CommandLine.arguments.contains("--whats-new-selftest") {
+            Task { @MainActor in await WhatsNewSnapshots.run() }
         } else if CommandLine.arguments.contains("--settings-snapshots") {
             Task { @MainActor in await SettingsSnapshots.run() }
         } else if CommandLine.arguments.contains("--settings-selftest") {
@@ -288,6 +296,11 @@ enum HUDSelfTest {
     }
 
     static func run() async {
+        SelfTestEnvironment.exitIfUnusable(.hud)
+        func exit(_ code: Int32) -> Never {
+            if code != 0 { SelfTestEnvironment.exitIfUnusable(.hud, during: true) }
+            Darwin.exit(code)
+        }
         let m = AppModel.shared
         let hud = RecordingHUD.capsule
         func pause(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }

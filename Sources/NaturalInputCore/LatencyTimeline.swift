@@ -20,6 +20,9 @@ public struct RequestTiming: Equatable, Sendable {
     public var networkMillis: Int?
     public var parseMillis: Int?
     public var hallucinationDrops: HallucinationFilter.Drops?
+    #if DEBUG
+    public var segmentConfidences: [SegmentConfidence]?
+    #endif
 
     public init(prepMillis: Int?, networkMillis: Int?, parseMillis: Int?,
                 hallucinationDrops: HallucinationFilter.Drops? = nil) {

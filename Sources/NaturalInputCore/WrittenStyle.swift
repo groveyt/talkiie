@@ -143,6 +143,7 @@ public enum RewriteRejection: String, Equatable, Sendable, CaseIterable {
     case keepWordDeleted
     case clauseDeleted
     case lineDeleted
+    case clauseMerged
     case gotLonger
     case simplifiedIntroduced
     case negationChanged
@@ -214,5 +215,27 @@ public enum WrittenStyleRound {
 
     public static func warmUp(mode: WrittenStyleMode, rewriter: (any Rewriter)?) async {
         await rewriter?.warmUp(mode: mode)
+    }
+}
+
+public enum PostInsertOffer: Equatable, Sendable {
+    case writtenStyle(rewritten: String)
+    case list(ListToggleOffer)
+}
+
+public enum WrittenStyleSwap {
+    public static func alternate(_ result: WrittenStyleResult, inserted: String) -> String? {
+        guard result.report.applied, result.original != nil else { return nil }
+        let candidate = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty, candidate != inserted.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        return result.text
+    }
+
+    public static func choose(insertedFully: Bool, newRoundStarted: Bool, idle: Bool,
+                              rewrite: String?, list: ListToggleOffer?) -> PostInsertOffer? {
+        guard insertedFully, !newRoundStarted, idle else { return nil }
+        if let rewrite { return .writtenStyle(rewritten: rewrite) }
+        if let list { return .list(list) }
+        return nil
     }
 }

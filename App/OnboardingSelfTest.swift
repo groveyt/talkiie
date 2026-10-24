@@ -105,7 +105,7 @@ enum OnboardingSelfTest {
             save(MenuMock(lines: [.item("完成設定導覽（\(progress?.step ?? 0)/\(progress?.of ?? 0)）")]), "menu-onboarding-progress.png", dir: dir)
             for f in NudgeFeature.allCases {
                 nudge.debugArm(f, context: context)
-                save(MenuMock(lines: [.item("💡 試試：\(nudge.pendingText)"), .item("不用了，這個不再提示")]),
+                save(MenuMock(lines: [.item(nudge.pendingLine), .item("不用了，這個不再提示")]),
                      "menu-nudge-\(f.rawValue)-\(String(describing: f)).png", dir: dir)
                 shots += 1
             }

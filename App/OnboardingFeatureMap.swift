@@ -138,7 +138,7 @@ struct FeatureMapView: View {
         ]
         if Edition.offersWrittenStyle {
             out.append(.init(id: "written", symbol: "text.badge.checkmark", title: "整理成書面語",
-                             summary: "講完之後刪掉口語的贅字再打出來，原文留在「最近口述」。",
+                             summary: "講完之後先照原樣打出來，刪好贅字後讓你按一下換成整理後的版本。",
                              state: written ? "開" : "關", on: written, target: .text))
         }
         out += [

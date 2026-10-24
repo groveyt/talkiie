@@ -68,6 +68,10 @@ public enum AccessibilityEnablement {
         public let app: KnownApp
         public let outcome: Outcome
 
+        public init(trigger: Trigger, app: KnownApp, outcome: Outcome) {
+            self.trigger = trigger; self.app = app; self.outcome = outcome
+        }
+
         public var settled: Bool {
             if case .attempted(let steps) = outcome { return steps.contains { $0.settled } }
             return false

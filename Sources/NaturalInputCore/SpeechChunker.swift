@@ -13,9 +13,9 @@ public struct SpeechChunker: Sendable {
 
     public static let sampleRate = AudioBuffer.sampleRate
 
-    public static let minChunkSeconds: Double = 15
+    public static let minChunkSeconds: Double = 20
     public static let minPauseSeconds: Double = 0.7
-    public static let maxChunkSeconds: Double = 25
+    public static let maxChunkSeconds: Double = 28
     public static let forcedSearchSeconds: Double = maxChunkSeconds - minChunkSeconds
     public static let quietSpanWindows = 5
     public static let minSpeechSeconds: Double = 0.5

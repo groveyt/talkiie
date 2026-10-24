@@ -12,6 +12,11 @@ final class FeatureNudgeCenter: ObservableObject {
     @Published private(set) var pending: NudgeFeature?
     @Published private(set) var pendingText = ""
 
+    var pendingLine: String {
+        guard let f = pending else { return "" }
+        return FeatureNudgePlan.menuPrefix(for: f) + pendingText
+    }
+
     private var state: NudgeState
     private var evaluating = false
 
@@ -125,7 +130,11 @@ final class FeatureNudgeCenter: ObservableObject {
         save()
         pending = nil
         Log.record(.featureNudge(.opened(f)))
-        SettingsWindow.show(SettingsTab(f.target))
+        if f.opensFeedback {
+            Edition.reportProblem()
+        } else {
+            SettingsWindow.show(SettingsTab(f.target))
+        }
     }
 
     func dismiss() {
@@ -165,7 +174,7 @@ struct FeatureNudgeMenuSection: View {
 
     var body: some View {
         if center.pending != nil, !center.pendingText.isEmpty {
-            Button("💡 試試：\(center.pendingText)") { center.open() }
+            Button(center.pendingLine) { center.open() }
             Button("不用了，這個不再提示") { center.dismiss() }
             Divider()
         }

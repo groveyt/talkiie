@@ -87,6 +87,33 @@ public final class StreamingTranscription {
         }
     }
     public private(set) var debugTexts: DebugTexts?
+
+    public struct DebugProvenance: Equatable, Sendable {
+        public struct ChunkPrompt: Equatable, Sendable {
+            public let index: Int
+            public let tail: Bool
+            public let sent: Bool
+            public init(index: Int, tail: Bool, sent: Bool) { self.index = index; self.tail = tail; self.sent = sent }
+        }
+        public let promptTerms: [String]
+        public let promptCounts: TranscriptionPrompt.Counts
+        public let shortUtterancePrompt: Bool
+        public let chunks: [ChunkPrompt]
+        public let fillerStrength: FillerStrength
+        public let spokenLists: Bool
+        public let spokenCommands: Bool
+        public let paragraphStrength: ParagraphStrength
+        public init(promptTerms: [String], promptCounts: TranscriptionPrompt.Counts, shortUtterancePrompt: Bool,
+                    chunks: [ChunkPrompt], fillerStrength: FillerStrength, spokenLists: Bool, spokenCommands: Bool,
+                    paragraphStrength: ParagraphStrength) {
+            self.promptTerms = promptTerms; self.promptCounts = promptCounts
+            self.shortUtterancePrompt = shortUtterancePrompt; self.chunks = chunks
+            self.fillerStrength = fillerStrength; self.spokenLists = spokenLists
+            self.spokenCommands = spokenCommands; self.paragraphStrength = paragraphStrength
+        }
+    }
+    public private(set) var debugProvenance: DebugProvenance?
+    public private(set) var debugConfidence: [SegmentConfidence]?
     #endif
     public var onChunkSending: ((UnsafeBufferPointer<Float>) -> Void)?
     public private(set) var chunker = SpeechChunker()
@@ -244,7 +271,13 @@ public final class StreamingTranscription {
             await withCheckedContinuation { waiters.append($0) }
         }
         if isCancelled { return nil }
-        if let firstFailure { return .failed(firstFailure) }
+        if let firstFailure {
+            #if DEBUG
+            debugProvenance = makeDebugProvenance(shortRound: chunks.count == 1 && !chunks[0].padding.isNone)
+            debugConfidence = makeDebugConfidence()
+            #endif
+            return .failed(firstFailure)
+        }
         if let formatted { return .text(formatted) }
         let parts: [(offset: Double, segments: [TranscriptSegment])] = chunks.map { c in
             guard case .segments(let s) = c.result else { return (c.offsetSeconds, []) }
@@ -271,6 +304,8 @@ public final class StreamingTranscription {
         if let report { onPunctuation?(report) }
         if let fillers { onFillerRemoval?(fillers) }
         #if DEBUG
+        debugProvenance = makeDebugProvenance(shortRound: shortRound)
+        debugConfidence = makeDebugConfidence()
         debugTexts = DebugTexts(whisper: merged.map(\.text).joined(),
                                 withoutModel: TranscriptFormatter.format(segments, fillers: fillerStrength,
                                                                          spokenLists: spokenLists,
@@ -280,6 +315,27 @@ public final class StreamingTranscription {
         #endif
         return .text(text)
     }
+
+    #if DEBUG
+    private func makeDebugConfidence() -> [SegmentConfidence]? {
+        let sent = chunks.filter { $0.sentAt != nil && $0.counts }.sorted { $0.index < $1.index }
+        guard !sent.isEmpty else { return nil }
+        return sent.flatMap { c in
+            (c.segmentConfidences ?? []).map { $0.placed(chunk: c.index, offsetSeconds: c.offsetSeconds) }
+        }
+    }
+
+    private func makeDebugProvenance(shortRound: Bool) -> DebugProvenance? {
+        let sent = chunks.filter { $0.sentAt != nil }.sorted { $0.index < $1.index }
+        guard !sent.isEmpty else { return nil }
+        let used = shortRound ? shortPrompt : prompt
+        return DebugProvenance(
+            promptTerms: used.terms, promptCounts: used.counts, shortUtterancePrompt: shortRound,
+            chunks: sent.map { DebugProvenance.ChunkPrompt(index: $0.index, tail: $0.isTail, sent: $0.promptSent) },
+            fillerStrength: fillerStrength, spokenLists: spokenLists, spokenCommands: spokenCommands,
+            paragraphStrength: paragraphStrength)
+    }
+    #endif
 
     private func punctuated(_ segments: [TranscriptSegment]) async
         -> (String, PunctuationReport?, FillerRemoval.Report?, ListToggleOffer?) {
@@ -363,6 +419,7 @@ public final class StreamingTranscription {
         let isTail: Bool
         let isSpeculative: Bool
         var promptWithheld = false
+        var promptSent = false
         var padding: SilencePadding = .none
         private(set) var held: SampleBox?
         var isHeld: Bool { held != nil }
@@ -373,6 +430,9 @@ public final class StreamingTranscription {
         var startedAt: Double?
         var finishedAt: Double?
         var early: (millis: Int, timing: RequestTiming?)?
+        #if DEBUG
+        var segmentConfidences: [SegmentConfidence]?
+        #endif
         init(index: Int, startFrame: Int, samples: SampleBox, offsetSeconds: Double, isTail: Bool, isSpeculative: Bool) {
             self.index = index
             self.startFrame = startFrame
@@ -422,6 +482,7 @@ public final class StreamingTranscription {
         let chunkPrompt = basePrompt.forChunk(chunkLevel)
         let withheld = chunkPrompt.isEmpty && !basePrompt.isEmpty
         chunk.promptWithheld = withheld
+        chunk.promptSent = !chunkPrompt.isEmpty
         if withheld, !speculative { promptWithheldChunks += 1 }
         let transcriber = self.transcriber
         let attempt: TranscriptionAttempt = speculative ? .speculative : .regular
@@ -484,6 +545,9 @@ public final class StreamingTranscription {
         }
         let wasFailed = hasFailed
         chunk.result = result
+        #if DEBUG
+        chunk.segmentConfidences = timing?.segmentConfidences
+        #endif
         chunk.finishedAt = finishedAt
         let ok: Bool = { if case .segments = result { return true } else { return false } }()
         var report = ChunkReport(index: chunk.index, millis: millis, succeeded: ok, isTail: chunk.isTail)
