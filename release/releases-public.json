@@ -2,6 +2,44 @@
   "$comment": "Talkiie 公開版（app.yyt.talkiie）更新說明的唯一來源。開發版的是 release/releases.json（版號各自獨立，decisions/0018 檔尾）。讀它的有三個：Sparkle 的「有新版本」視窗（tools/release/make-appcast-public.sh 用 tools/release/releases.py --product public plain 轉成純文字、以 sparkle:format=\"plain-text\" 內嵌進 appcast —— 不開 WebView）、app 的「新功能」視窗（打包進 Talkiie.app/Contents/Resources/releases-public.json）與官網的版本紀錄（site/changelog.html 標記之間，由 tools/release/releases.py --product public site-html 產生；改了這份就重產，site/stage.sh 與 tools/release-public.sh 會擋沒重產的）。新的在前；最上面那一版必須等於 AppPublic/VERSION 的 MARKETING_VERSION（tools/release/releases.py --product public check，tools/release-public.sh 發版前一定跑）。只寫純文字，給一般使用者看的白話；不准提開發版的部署細節與開發者個人資訊（releases.py 會擋）。kind：new／improved／fixed；how 是可選的步驟；summary 是可選的一句話（排在各項之前）。數字與單位、「設定 › 一般」這類不該拆開的地方用不斷行空白 \\u00a0（官網的排版規則，見 site/README.md）。",
   "releases": [
     {
+      "version": "1.3.5",
+      "date": "2026-10-25",
+      "summary": "新手導覽可以練習說一句；可以關掉自動檢查更新；下載語音模型時看得到進度與剩下的時間。",
+      "items": [
+        {
+          "kind": "new",
+          "title": "新手導覽多了「練習一次」",
+          "body": "在導覽視窗裡說一句話，字出現就代表設定好了；如果沒有打進去，會直接告訴你。",
+          "how": [
+            "想再練一次：打開「設定…」，到「關於」頁，按「新手導覽…」。"
+          ]
+        },
+        {
+          "kind": "new",
+          "title": "可以關掉自動檢查更新",
+          "body": "關掉之後，只有你自己按「檢查更新…」時才會連線檢查新版本。",
+          "how": [
+            "打開「設定…」，到「關於」頁，關掉「自動檢查更新」。"
+          ]
+        },
+        {
+          "kind": "improved",
+          "title": "檢查更新時不再送出你的語言偏好",
+          "body": "檢查與下載更新時，語言欄位固定送 en，不再帶上你電腦的語言設定，跟隱私頁寫的一致。"
+        },
+        {
+          "kind": "improved",
+          "title": "下載語音模型時看得到進度",
+          "body": "下載時會顯示已經下載多少、大約還要多久；驗證與準備時會告訴你「這一步只需要做一次」。下載失敗時分得出是網路、伺服器還是空間不夠；模型載入失敗時可以重新下載。"
+        },
+        {
+          "kind": "improved",
+          "title": "插完字之後的說明講得更清楚",
+          "body": "插完字的說明不再寫「未驗證」。沒辨識出字的時候，會講清楚是沒收到聲音、還是沒聽出字；講完超過 5 秒還沒出字，會顯示「還在處理」。"
+        }
+      ]
+    },
+    {
       "version": "1.3.4",
       "date": "2026-10-24",
       "summary": "有想法或遇到問題，隨時可以從選單「回報問題…」跟開發者說；清單不再少字，長一點的口述辨識更準。",

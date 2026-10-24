@@ -18,6 +18,7 @@ public enum OnboardingPlan {
     public enum Step: Int, CaseIterable, Sendable, Equatable {
         case permissions = 1
         case model = 2
+        case practice = 3
         case start = 4
         case features = 5
     }
@@ -25,7 +26,7 @@ public enum OnboardingPlan {
     public static func steps(audience: Audience, hasModelStep: Bool) -> [Step] {
         switch audience {
         case .featuresOnly: return [.features]
-        case .fullTour: return [.permissions] + (hasModelStep ? [.model] : []) + [.start, .features]
+        case .fullTour: return [.permissions] + (hasModelStep ? [.model] : []) + [.start, .practice, .features]
         }
     }
 
@@ -81,5 +82,18 @@ public enum OnboardingPlan {
         var next = state
         next.lastStep = step
         return next
+    }
+}
+
+public enum OnboardingPractice {
+    public enum Status: Equatable, Sendable {
+        case waiting
+        case notLanded
+        case landed
+    }
+
+    public static func status(roundsSinceStart: Int, fieldHasText: Bool) -> Status {
+        guard roundsSinceStart > 0 else { return .waiting }
+        return fieldHasText ? .landed : .notLanded
     }
 }

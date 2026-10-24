@@ -173,6 +173,67 @@ enum OnboardingSelfTest {
         ok(9, nudge.pending == nil)
         checks += 1
 
+        ok(10, expected.firstIndex(of: .practice) == expected.firstIndex(of: .start).map { $0 + 1 })
+        ConsentStore.debugOverride = .some(Edition.consentVersion)
+        ob.debugReset()
+        ob.evaluateAtLaunch(consentedBefore: false, hasInsertionsOverride: false)
+        _ = ob.presentAfterConsent()
+        while ob.currentStep != .practice, !ob.isLast { ob.next() }
+        ok(10, ob.currentStep == .practice)
+        await wait(0.8)
+        if let win = ob.debugWindow, let root = win.contentView {
+            let seen = PlusVisibilityOCR.texts(in: root).joined(separator: "\n")
+            ok(10, seen.contains("練習一次"))
+            ok(10, seen.contains("等你說話"))
+            ok(10, !seen.contains("設定好了"))
+        } else { fail(10) }
+        let sample = "今天天氣很好，我們去散步吧。"
+        for (name, view, must, mustNot) in [
+            ("practice-waiting", OnboardingPracticeStep(), "說出來的字會出現在這裡", "設定好了"),
+            ("practice-landed", OnboardingPracticeStep(previewText: sample, previewRounds: 1), "設定好了", "沒有打進"),
+            ("practice-notlanded", OnboardingPracticeStep(previewText: "", previewRounds: 1), "沒有打進", "設定好了"),
+        ] {
+            let host = NSHostingView(rootView: VStack(alignment: .leading, spacing: 16) { view }
+                .padding(28).frame(width: OnboardingView.width).environmentObject(AppModel.shared))
+            host.appearance = NSAppearance(named: .aqua)
+            let size = NSSize(width: OnboardingView.width, height: max(host.fittingSize.height, 640))
+            host.frame = NSRect(origin: .zero, size: size)
+            host.layoutSubtreeIfNeeded()
+            await wait(0.3)
+            let seen = PlusVisibilityOCR.texts(in: host).joined(separator: "\n")
+            ok(10, seen.contains(must))
+            ok(10, !seen.contains(mustNot))
+            if let dir, let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                if let png = rep.representation(using: .png, properties: [:]) {
+                    FileManager.default.createFile(atPath: dir.appendingPathComponent("\(name)-light.png").path, contents: png)
+                    shots += 1
+                }
+            }
+        }
+        checks += 1
+
+        var liveLanded: Bool?
+        if Permissions.accessibilityTrusted(), let win = ob.debugWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            win.makeKeyAndOrderFront(nil)
+            await wait(1.0)
+            if win.isKeyWindow, NSApp.isActive, win.firstResponder is NSTextView {
+                let t0 = Date()
+                let frozen = TranscriptDelivery.freezeTarget(stage: .selftest)
+                ok(11, frozen == nil && Date().timeIntervalSince(t0) < 0.2)
+                let outcome = await TranscriptDelivery.deliver("練習測試", to: nil)
+                await wait(0.4)
+                let landed = (win.firstResponder as? NSTextView)?.string == "練習測試"
+                liveLanded = landed
+                if case .inserted = outcome {} else { fail(11) }
+                ok(11, landed)
+            }
+        }
+        OnboardingSelfTestLine.emit(.liveInsertion(liveLanded))
+        if liveLanded != nil { checks += 1 }
+        ob.debugCloseWindow()
+
         OnboardingSelfTestLine.emit(.passed(checks: checks, shots: shots))
         exit(0)
     }

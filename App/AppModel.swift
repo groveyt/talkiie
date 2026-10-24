@@ -71,6 +71,7 @@ final class AppModel: ObservableObject {
     private var transmitting = false
 
     private var sendingNotice: String?
+    private var lastRoundLevel: AudioLevelSummary?
 
     @Published private(set) var history = DictationHistory()
     private(set) var inserting = false
@@ -499,6 +500,7 @@ final class AppModel: ObservableObject {
         sendingTimeline = timeline
         guard case .sending(let since) = phase, streaming === round else { round.cancel(); return }
         let level = summary.level
+        lastRoundLevel = level
         Log.record(.handoff(seconds: level.seconds, peakDBFS: level.peakDBFS, rmsDBFS: level.rmsDBFS, silent: level.isSilent))
         guard !summary.isEmpty else {
             cancelStreaming()
@@ -535,7 +537,9 @@ final class AppModel: ObservableObject {
             #endif
             _ = finishedTimeline
             let isText: Bool = { if case .text = outcome { return true } else { return false } }()
-            Log.record(.roundLatency(stopToTextMillis: Int((DispatchTime.now().uptimeNanoseconds - stoppedAt) / 1_000_000),
+            let stopToText = Int((DispatchTime.now().uptimeNanoseconds - stoppedAt) / 1_000_000)
+            if stopToText >= RoundNotices.slowRoundMillis { Log.record(.slowRound(stopToTextMillis: stopToText)) }
+            Log.record(.roundLatency(stopToTextMillis: stopToText,
                                      chunks: summary.chunksSent, tailSent: summary.tailSent, succeeded: isText,
                                      speculativeSends: summary.speculativeSends,
                                      tailFromSpeculation: summary.tailFromSpeculation))
@@ -621,6 +625,12 @@ final class AppModel: ObservableObject {
             transmitting = false
             RecordingHUD.showSending(notice: reason.hudMessage, transmitting: false)
             sendWatchdog?.cancel()
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(RoundNotices.slowRoundSeconds))
+                guard !Task.isCancelled, let self, self.phase == .sending(since: since) else { return }
+                if self.sendingNotice == nil { self.sendingNotice = RoundNotices.stillWorkingCaption }
+                RecordingHUD.showSending(notice: self.sendingNotice, transmitting: self.transmitting)
+            }
             sendWatchdog = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(Self.sendTimeoutSeconds))
                 guard !Task.isCancelled, let self, self.phase == .sending(since: since) else { return }
@@ -668,7 +678,7 @@ final class AppModel: ObservableObject {
         sendingNotice = nil
         transmitting = false
         guard !text.isEmpty else {
-            RecordingHUD.showNotice(Edition.Copy.emptyTranscriptNotice)
+            RecordingHUD.showNotice(RoundNotices.emptyTranscript(level: lastRoundLevel), seconds: 7)
             return false
         }
         return true

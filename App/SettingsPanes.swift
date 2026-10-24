@@ -495,6 +495,7 @@ struct AboutPane: View {
                 }
                 .padding(.vertical, 6)
             }
+            Edition.UpdateChecksSection()
             Edition.PlusSection()
             Section("了解 Talkiie") {
                 NavigationRow(symbol: "sparkles", title: "這一版的新功能",
@@ -524,7 +525,7 @@ struct AboutPane: View {
             Label("有新版可以更新（\(v)）", systemImage: "arrow.down.circle.fill")
                 .font(.callout).foregroundStyle(.primary)
         } else {
-            Text("每天自動檢查更新").font(.callout).foregroundStyle(.secondary)
+            Text(Edition.updateIdleStatusText).font(.callout).foregroundStyle(.secondary)
         }
     }
 }

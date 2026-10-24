@@ -24,6 +24,7 @@ public struct DictationHistory: Sendable {
     }
 
     public var count: Int { entries.count }
+    public var recordedCount: Int { nextSerial }
     public var isEmpty: Bool { entries.isEmpty }
 
     @discardableResult

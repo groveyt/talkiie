@@ -71,6 +71,15 @@ public final class ModelInstaller: @unchecked Sendable {
         return await task.value
     }
 
+    @discardableResult
+    public func discardInstalledModel() -> ModelInstallState {
+        lock.lock()
+        if inFlight != nil { let s = _state; lock.unlock(); return s }
+        lock.unlock()
+        try? FileManager.default.removeItem(at: modelDirectory)
+        return refresh()
+    }
+
     public func cancel() {
         lock.lock(); let t = inFlight; lock.unlock()
         t?.cancel()

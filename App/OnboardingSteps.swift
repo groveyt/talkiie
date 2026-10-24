@@ -15,6 +15,7 @@ struct OnboardingView: View {
         switch step {
         case .permissions: return "先允許兩個權限"
         case .model: return "下載語音模型"
+        case .practice: return "練習一次"
         case .start: return "怎麼開始說話"
         case .features: return onlyFeatures ? "Talkiie 還能做的事" : "你可能會想打開的"
         }
@@ -30,6 +31,7 @@ struct OnboardingView: View {
                     case .permissions: OnboardingPermissionsStep()
                     case .model: Edition.OnboardingModelStep()
                     case .start: OnboardingStartStep()
+                    case .practice: OnboardingPracticeStep()
                     case .features: OnboardingFeaturesStep(onlyFeatures: onlyFeatures)
                     }
                 }
@@ -173,9 +175,123 @@ struct OnboardingStartStep: View {
         .scrollDisabled(true)
         .fixedSize(horizontal: false, vertical: true)
 
-        Label("選好之後，到任何 app 的輸入欄位按 \(model.hotkey.label)\(tap.menuPhrase.map { " 或\($0)" } ?? "") 試試。", systemImage: "arrow.right.circle")
+        Label("選好之後按「下一步」，馬上練習一次。", systemImage: "arrow.right.circle")
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct OnboardingPracticeStep: View {
+    @EnvironmentObject var model: AppModel
+    @AppStorage(TapHotkey.defaultsKey) private var tap: TapHotkey = .off
+    @State private var text = ""
+    @State private var startRounds = 0
+    @FocusState private var fieldFocused: Bool
+
+    #if DEBUG
+    private var previewRounds = 0
+    init(previewText: String = "", previewRounds: Int = 0) {
+        _text = State(initialValue: previewText)
+        self.previewRounds = previewRounds
+    }
+    private var extraRounds: Int { previewRounds }
+    #else
+    private var extraRounds: Int { 0 }
+    #endif
+
+    private var status: OnboardingPractice.Status {
+        OnboardingPractice.status(roundsSinceStart: model.history.recordedCount - startRounds + extraRounds,
+                                  fieldHasText: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private var startPhrase: String {
+        model.hotkey.label + (tap.menuPhrase.map { " 或\($0)" } ?? "")
+    }
+
+    private var permissionsReady: Bool {
+        model.permissions.microphone == .granted && model.permissions.accessibilityTrusted
+    }
+
+    var body: some View {
+        Edition.OnboardingPracticeNotice()
+
+        Text("照下面做一次，確認一切都設好了。")
+            .fixedSize(horizontal: false, vertical: true)
+
+        VStack(alignment: .leading, spacing: 10) {
+            practiceRow("1", "點一下下面的欄位（游標在欄位裡閃就對了）")
+            practiceRow("2", "按 \(startPhrase) 開始，然後說一句話，例如「今天天氣很好，我們去散步吧。」")
+            practiceRow("3", "說完 \(AppModel.stopTrigger.menuPhrase)結束，或再按一次 \(startPhrase)")
+            Text("想取消就按 Esc —— 這一句不會打出來。")
+                .font(.callout).foregroundStyle(.secondary)
+                .padding(.leading, 28)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(nsColor: .separatorColor)))
+
+        if !permissionsReady {
+            Label("還沒允許麥克風或輔助使用 —— 按「上一步」回到第一步允許之後再練習。", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        TextField("說出來的字會出現在這裡", text: $text, axis: .vertical)
+            .textFieldStyle(.roundedBorder)
+            .font(.title3)
+            .lineLimit(3...6)
+            .focused($fieldFocused)
+            .accessibilityLabel("練習欄位")
+            .onAppear {
+                startRounds = model.history.recordedCount
+                DispatchQueue.main.async { fieldFocused = true }
+            }
+
+        statusRow
+
+        HStack {
+            Spacer()
+            Button("再練習一次") {
+                text = ""
+                startRounds = model.history.recordedCount
+                fieldFocused = true
+            }
+            .disabled(status == .waiting && text.isEmpty)
+        }
+    }
+
+    @ViewBuilder private var statusRow: some View {
+        switch status {
+        case .waiting:
+            Label("等你說話…", systemImage: "waveform")
+                .foregroundStyle(.secondary)
+        case .landed:
+            Label("設定好了", systemImage: "checkmark.circle.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.green)
+                .accessibilityLabel("設定好了，文字已經打進欄位")
+        case .notLanded:
+            VStack(alignment: .leading, spacing: 4) {
+                Label("有聽到你說的話，但字沒有打進這個欄位", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("先點一下上面的欄位再說一次。還是不行的話，按「上一步」檢查「輔助使用」有沒有允許；剛才那一句可以在選單列 Talkiie →「最近口述」找回來。")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func practiceRow(_ number: String, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(number)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Color.accentColor))
+                .accessibilityHidden(true)
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

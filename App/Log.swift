@@ -47,6 +47,7 @@ enum LogEvent {
     case fillerRemoval(strength: FillerStrength, spans: Int, characters: Int, guardRejected: Bool)
     case roundLatency(stopToTextMillis: Int, chunks: Int, tailSent: Bool, succeeded: Bool,
                       speculativeSends: Int = 0, tailFromSpeculation: Bool = false)
+    case slowRound(stopToTextMillis: Int)
     case streamCancelled(chunksSent: Int)
     case transcriptionTimedOut
     case permissions(PermissionGuidance.State)
@@ -112,12 +113,13 @@ enum EditCaptureLogResult {
 }
 
 enum UpdaterEvent {
-    enum Refusal { case notConsented, busy, gate }
+    enum Refusal { case notConsented, busy, gate, autoChecksOff }
     case disabledInDebug
     case disabledNoPublicKey
     case notStartedNoConsent
     case started(automaticChecks: Bool)
     case startFailed
+    case autoChecksChanged(enabled: Bool)
     case checkRefused(Refusal)
     case updateRejected
     case updateFound(build: Int?)
@@ -274,6 +276,8 @@ enum Log {
         case .personalDictionary(let n, let fuzzy, let terms, let withheld, let manual, let learned, let dropped, let gated,
                                  let tokens, let spelling):
             transcribe.notice("personal dictionary replacements=\(n, privacy: .public) fuzzy=\(fuzzy, privacy: .public) spelling=\(spelling, privacy: .public) promptTerms=\(terms, privacy: .public) manual=\(manual, privacy: .public) learned=\(learned, privacy: .public) dropped=\(dropped, privacy: .public) gated=\(gated, privacy: .public) tokens=\(tokens, privacy: .public)/\(TranscriptionPrompt.whisperPromptLimit, privacy: .public) promptWithheldChunks=\(withheld, privacy: .public)")
+        case .slowRound(let ms):
+            latency.notice("slow round stopToText=\(ms, privacy: .public)ms")
         case .streamCancelled(let n):
             transcribe.notice("round cancelled after \(n, privacy: .public) chunk(s) already sent\(Edition.Copy.chunksSentLogSuffix, privacy: .public)")
         case .engineStopped(let ms):
@@ -704,11 +708,18 @@ enum SettingsSnapshotsLine {
 enum OnboardingSelfTestLine {
     case passed(checks: Int, shots: Int)
     case failed(check: Int)
+    case liveInsertion(Bool?)
 
     static func emit(_ line: OnboardingSelfTestLine) {
         switch line {
+        case .liveInsertion(let landed):
+            switch landed {
+            case true?: print("onboarding-selftest: 檢查 11 通過 —— 練習欄位在 Talkiie 自己的視窗前景時收得到插入的字")
+            case false?: print("onboarding-selftest: 檢查 11 失敗 —— 字沒有進練習欄位")
+            case nil: print("onboarding-selftest: 檢查 11 略過（沒有輔助使用權限或視窗不在前景）—— 這一項沒有被驗證")
+            }
         case .passed(let checks, let shots):
-            print("onboarding-selftest: PASS（\(checks) 項：沒同意打不開／新安裝完整導覽／老用戶只跳一次／選單進度／功能提示／功能地圖；\(shots) 張截圖）")
+            print("onboarding-selftest: PASS（\(checks) 項：沒同意打不開／新安裝完整導覽／老用戶只跳一次／選單進度／功能提示／功能地圖／練習一次；\(shots) 張截圖）")
         case .failed(let check):
             print("onboarding-selftest: FAIL 檢查 \(check)（見 App/OnboardingSelfTest.swift；exit \(50 + check)）")
         }

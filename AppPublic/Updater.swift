@@ -24,6 +24,16 @@ final class Updater: NSObject, ObservableObject {
         PublicUpdatePolicy.isUsablePublicKey(Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String)
     }
 
+    @Published private(set) var autoChecks = PublicUpdatePolicy.autoChecksEnabled(
+        stored: UserDefaults.standard.object(forKey: PublicUpdatePolicy.autoChecksDefaultsKey) as? Bool)
+
+    func setAutoChecks(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: PublicUpdatePolicy.autoChecksDefaultsKey)
+        autoChecks = on
+        controller?.updater.automaticallyChecksForUpdates = on
+        Log.record(.updater(.autoChecksChanged(enabled: on)))
+    }
+
     private var controller: SPUStandardUpdaterController?
     private var postponed: (() -> Void)?
     private var subs = Set<AnyCancellable>()
@@ -38,6 +48,8 @@ final class Updater: NSObject, ObservableObject {
         let c = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: self, userDriverDelegate: self)
         controller = c
         c.updater.sendsSystemProfile = false
+        c.updater.httpHeaders = PublicUpdatePolicy.httpHeaders
+        c.updater.automaticallyChecksForUpdates = autoChecks
         c.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.canCheck = $0 }
@@ -52,7 +64,7 @@ final class Updater: NSObject, ObservableObject {
         do {
             try c.updater.start()
             Log.record(.updater(.started(automaticChecks: c.updater.automaticallyChecksForUpdates)))
-            c.updater.checkForUpdatesInBackground()
+            if autoChecks { c.updater.checkForUpdatesInBackground() }
         } catch {
             Log.record(.updater(.startFailed))
         }
@@ -89,13 +101,18 @@ final class Updater: NSObject, ObservableObject {
 
 extension Updater: SPUUpdaterDelegate {
     nonisolated func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
-        let (consented, busy, sendsProfile, feedURL) = MainActor.assumeIsolated {
+        let (consented, busy, sendsProfile, feedURL, autoChecks) = MainActor.assumeIsolated {
             updater.sendsSystemProfile = false
-            return (ConsentStore.allowsCapture, Updater.busy, updater.sendsSystemProfile, updater.feedURL)
+            updater.httpHeaders = PublicUpdatePolicy.httpHeaders
+            return (ConsentStore.allowsCapture, Updater.busy, updater.sendsSystemProfile, updater.feedURL, Updater.shared.autoChecks)
         }
         guard consented else {
             MainActor.assumeIsolated { Log.record(.updater(.checkRefused(.notConsented))) }
             throw Self.error("no consent")
+        }
+        if updateCheck == .updatesInBackground, !autoChecks {
+            MainActor.assumeIsolated { Log.record(.updater(.checkRefused(.autoChecksOff))) }
+            throw Self.error("automatic update checks are off")
         }
         if updateCheck == .updatesInBackground, busy {
             MainActor.assumeIsolated { Log.record(.updater(.checkRefused(.busy))) }

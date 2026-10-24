@@ -65,19 +65,19 @@ enum Edition {
             }
         }
 
-        static func downloadFailureReason(_ f: ModelInstallFailure) -> String {
-            switch f {
-            case .insufficientDiskSpace(let need, _):
-                return "磁碟空間不足（需要約 \(need / 1_000_000_000 + 1) GB）"
-            case .alreadyInProgressElsewhere: return "另一個 Talkiie 正在下載"
-            case .interrupted, .httpStatus, .redirectRefused: return "網路中斷，再按一次會從斷掉的地方繼續"
-            case .checksumMismatch, .sizeMismatch, .unexpectedRange: return "下載的檔案不正確，已刪除，請重試"
-            case .extractionFailed, .contentsInvalid: return "安裝失敗，請重試"
-            case .logUnavailable, .fileSystem: return "無法寫入本機資料夾"
-            case .notInManifest, .hostingUndecided: return "模型下載尚未開放"
-            case .cancelled: return "已取消"
+        static func downloadFailureReason(_ f: ModelInstallFailure) -> String { ModelDownloadText.failureReason(f) }
+
+        static func modelFailureOffersReport(_ p: LocalModelPhase) -> Bool {
+            switch p {
+            case .downloadFailed(let f): return ModelDownloadText.offersReport(for: f)
+            case .prepareFailed: return true
+            default: return false
             }
         }
+
+        static let modelBeforeDownloadNote = "建議用 Wi-Fi，約 2 GB"
+        static let modelOneTimeNote = "這一步只需要做一次"
+        static let modelRedownloadButton = "重新下載語音模型…"
     }
 
     static let logSubsystem = PublicIdentity.logSubsystem
@@ -140,6 +140,9 @@ enum Edition {
     struct OnboardingModelStep: View {
         var body: some View { PublicOnboardingModelStep() }
     }
+    struct OnboardingPracticeNotice: View {
+        var body: some View { PublicOnboardingPracticeNotice() }
+    }
 
     struct StatusSection: View {
         var body: some View { PublicModelStatusSection() }
@@ -153,6 +156,23 @@ enum Edition {
         var body: some View {
             if Edition.offersPlus { PublicSpeedSection() }
         }
+    }
+
+    struct UpdateChecksSection: View {
+        @ObservedObject private var updater = Updater.shared
+        var body: some View {
+            if Updater.availableInThisBuild {
+                Section {
+                    Toggle("自動檢查更新", isOn: Binding(get: { updater.autoChecks }, set: { updater.setAutoChecks($0) }))
+                    Text("開著時，Talkiie 每天向 Talkiie 官網抓一份更新清單（不帶你的資料，見隱私頁）。關掉就不會自己連網，要更新時按「檢查更新…」。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @MainActor static var updateIdleStatusText: String {
+        Updater.shared.autoChecks ? "每天自動檢查更新" : "自動檢查更新已關閉"
     }
 
     struct PlusSection: View {

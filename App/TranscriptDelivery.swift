@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import NaturalInputCore
 
@@ -15,6 +16,7 @@ enum TranscriptDelivery {
     }
 
     static func freezeTarget(stage: FocusStage = .freeze) -> FrozenTarget? {
+        if NSRunningApplication.current.isActive { return nil }
         let inspector = LiveFocusInspector()
         let (first, source) = enablingAccessibility(inspector.lookupFocus(), inspector: inspector, stage: stage)
         let snapshot = settled(first.snapshot, inspector: inspector, retryStage: .freezeRetry)

@@ -265,7 +265,7 @@ enum HUDSelfTest {
         let failures = deliveryOutcomes.map(DeliveryContent.init).filter { !$0.succeeded }
         let keys = failures.map { $0.title + "|" + ($0.detail ?? "") }
         return Set(keys).count == keys.count && failures.allSatisfy { $0.caption.contains("最近口述") }
-            && DeliveryContent(.inserted(.enforced)).title == "已插入（未驗證）"
+            && DeliveryContent(.inserted(.enforced)).title == "已插入"
             && !DeliveryContent(.refused(.accessibilityNotTrusted)).canReinsert
             && !DeliveryContent(.aborted(sentUnits: 5, reason: .cursorMoved)).canReinsert
             && DeliveryContent(.aborted(sentUnits: 0, reason: .cursorMoved)).canReinsert
@@ -307,6 +307,7 @@ enum HUDSelfTest {
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--hud-selftest"), i + 1 < args.count, !args[i + 1].hasPrefix("--") {
             CapsuleStyleSnapshots.render(to: URL(fileURLWithPath: args[i + 1], isDirectory: true))
+            CapsuleStyleSnapshots.renderRoundNotices(to: URL(fileURLWithPath: args[i + 1], isDirectory: true))
         }
         func capsuleParked() async -> Bool {
             await pause(0.1)
@@ -706,6 +707,18 @@ enum CapsuleStyleSnapshots {
                 }
             }
         }
+    }
+
+    static func renderRoundNotices(to dir: URL) {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        save(DeliveryPill(content: DeliveryContent(.inserted(.enforced)), text: "範例口述文字。") { _ in },
+             "delivery-inserted.png", in: dir)
+        save(NoticePill(message: RoundNotices.emptyTranscript(level: nil)), "notice-empty-heard.png", in: dir)
+        let quiet = AudioLevelSummary(samples: [Float](repeating: 0, count: 16_000))
+        save(NoticePill(message: RoundNotices.emptyTranscript(level: quiet)), "notice-empty-silent.png", in: dir)
+        let model = CapsuleModel()
+        model.set(mode: .thinking(transmitting: true), caption: RoundNotices.stillWorkingCaption)
+        save(CapsuleView(model: model) { _ in }, "thinking-still-working.png", in: dir)
     }
 
     static func save<V: View>(_ view: V, _ name: String, in dir: URL) {

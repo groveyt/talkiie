@@ -11,6 +11,12 @@ public enum PublicUpdatePolicy {
     public static let feedParameters: [[String: String]] = []
     public static let allowedSystemProfileKeys: [String] = []
 
+    public static let httpHeaders: [String: String] = ["Accept-Language": "en"]
+
+    public static let autoChecksDefaultsKey = "autoUpdateChecks"
+
+    public static func autoChecksEnabled(stored: Bool?) -> Bool { stored ?? true }
+
     public static func isUsablePublicKey(_ key: String?) -> Bool {
         guard let key, key != placeholderPublicKey, let raw = Data(base64Encoded: key) else { return false }
         return raw.count == 32

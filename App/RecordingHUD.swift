@@ -259,7 +259,7 @@ struct DeliveryContent: Equatable {
     let canReinsert: Bool
 
     static let recoveryHint = "之後也可以在選單列 Talkiie →「最近口述」找到這段"
-    static let unverifiedHint = "沒看到字？選單列 Talkiie →「最近口述」可重新插入或複製"
+    static let unverifiedHint = "Talkiie 看不到欄位內容；沒看到字，可從選單列 →「最近口述」再插一次"
     static let accessibilityHint = "請到選單列 Talkiie →「設定…」→「權限」允許輔助使用。文字已保留在「最近口述」"
     static let partialNote = "前面已有一部分文字進入欄位，可能不完整；不會自動重送，請自行檢查"
     static let busyNote = "上一段還在插入中，這段沒有插入"
@@ -269,7 +269,7 @@ struct DeliveryContent: Equatable {
         switch outcome {
         case .inserted:
             succeeded = true
-            title = "已插入（未驗證）"
+            title = "已插入"
             detail = nil
             caption = Self.unverifiedHint
             canReinsert = true
@@ -300,7 +300,7 @@ enum DeliveryAction: Sendable, Equatable {
     case copy
 }
 
-private struct DeliveryPill: View {
+struct DeliveryPill: View {
     let content: DeliveryContent
     let text: String
     let onAction: (DeliveryAction) -> Void

@@ -5,6 +5,7 @@ public protocol ModelInstalling: AnyObject, Sendable {
     @discardableResult func refresh() -> ModelInstallState
     @discardableResult func install() async -> ModelInstallState
     func cancel()
+    @discardableResult func discardInstalledModel() -> ModelInstallState
 }
 
 extension ModelInstaller: ModelInstalling {}
@@ -87,13 +88,18 @@ public final class LocalModelSetup: @unchecked Sendable {
         await run(download: true)
     }
 
+    @discardableResult
+    public func redownloadAndPrepare() async -> LocalModelPhase {
+        await run(download: true, discardFirst: true)
+    }
+
     public func cancelDownload() { installer.cancel() }
 
-    private func run(download: Bool) async -> LocalModelPhase {
+    private func run(download: Bool, discardFirst: Bool = false) async -> LocalModelPhase {
         let task: Task<LocalModelPhase, Never> = lock.withLock {
             if let running = inFlight { return running }
             let t = Task { () -> LocalModelPhase in
-                let result = await self.flow(download: download)
+                let result = await self.flow(download: download, discardFirst: discardFirst)
                 self.lock.withLock { self.inFlight = nil }
                 return result
             }
@@ -103,8 +109,9 @@ public final class LocalModelSetup: @unchecked Sendable {
         return await task.value
     }
 
-    private func flow(download: Bool) async -> LocalModelPhase {
+    private func flow(download: Bool, discardFirst: Bool = false) async -> LocalModelPhase {
         if phase == .ready { return .ready }
+        if discardFirst, case .prepareFailed = phase { installer.discardInstalledModel() }
         var state = installer.refresh()
         if case .available = state {
         } else if download {

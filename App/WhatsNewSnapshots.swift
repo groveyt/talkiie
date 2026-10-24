@@ -16,7 +16,7 @@ enum WhatsNewSnapshots {
         let view = WhatsNewView(releases: [latest], to: latest.version, from: nil, close: {})
         var shots = 0
         for (suffix, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
-            let host = NSHostingView(rootView: view.environment(\.colorScheme, scheme))
+            let host = NSHostingView(rootView: view.background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme))
             host.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
             host.frame = NSRect(x: 0, y: 0, width: 540, height: 600)
             host.layoutSubtreeIfNeeded()
